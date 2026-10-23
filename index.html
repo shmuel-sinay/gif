@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>יוצר סטיקרים וגיפים</title>
+<style>
+  :root{--bg:#f6f7fb;--card:#fff;--fg:#1d2330;--mut:#6b7385;--acc:#4f46e5;--line:#e3e6ee}
+  @media (prefers-color-scheme:dark){:root{--bg:#12141a;--card:#1b1e27;--fg:#eceef4;--mut:#9aa1b3;--acc:#8b86ff;--line:#2b2f3b}}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 system-ui,Arial,sans-serif}
+  main{max-width:760px;margin:0 auto;padding:20px 16px 40px}
+  h1{font-size:1.5rem;margin:0 0 4px}
+  p.sub{margin:0 0 16px;color:var(--mut)}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:14px}
+  label{display:block;font-size:.85rem;color:var(--mut);margin:10px 0 4px}
+  input,select,textarea,button{font:inherit;color:inherit}
+  input[type=text],select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:transparent}
+  .row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:140px}
+  button{cursor:pointer;border:0;border-radius:10px;padding:10px 16px;background:var(--acc);color:#fff;font-weight:600}
+  button.sec{background:transparent;color:var(--fg);border:1px solid var(--line)}
+  button:disabled{opacity:.5;cursor:wait}
+  .stage{display:grid;place-items:center;min-height:300px;border-radius:12px;
+    background:repeating-conic-gradient(#8883 0 25%,transparent 0 50%) 0 0/20px 20px}
+  canvas{max-width:100%;height:auto}
+  #status{min-height:1.4em;color:var(--mut);font-size:.9rem;margin-top:8px}
+  #out img{max-width:256px;display:block;margin:8px 0}
+  .hint{font-size:.8rem;color:var(--mut)}
+</style>
+</head>
+<body>
+<main>
+  <h1>יוצר סטיקרים וגיפים</h1>
+  <p class="sub">כותבים מה רוצים, ה-AI מצייר, והדף מנפיש ומוציא GIF. הכול חינם ורץ בדפדפן.</p>
+
+  <div class="card">
+    <label for="prompt">מה לצייר? (עדיף באנגלית)</label>
+    <input type="text" id="prompt" value="cute happy cat waving">
+    <div class="row">
+      <div><label for="style">סגנון</label>
+        <select id="style">
+          <option value="cartoon sticker, thick outline, flat colors">קריקטורה</option>
+          <option value="kawaii sticker, pastel, simple">חמוד</option>
+          <option value="emoji style sticker, glossy">אימוג'י</option>
+          <option value="pixel art sticker">פיקסלים</option>
+        </select></div>
+      <div><label for="anim">אנימציה</label>
+        <select id="anim">
+          <option value="bounce">קפיצה</option><option value="shake">רעידה</option>
+          <option value="pulse">פעימה</option><option value="spin">סיבוב</option>
+          <option value="wobble">נדנוד</option><option value="float">ריחוף</option>
+        </select></div>
+      <div><label for="size">גודל (פיקסלים)</label>
+        <select id="size"><option>128</option><option selected>256</option><option>384</option><option>512</option></select></div>
+    </div>
+    <label for="caption">כיתוב (לא חובה)</label>
+    <input type="text" id="caption" placeholder="לדוגמה: מזל טוב!">
+    <div class="row" style="margin-top:12px">
+      <button id="gen">צור עם AI</button>
+      <button id="upload" class="sec">או העלה תמונה</button>
+    </div>
+    <input type="file" id="file" accept="image/*" hidden>
+    <div id="status"></div>
+  </div>
+
+  <div class="card">
+    <div class="stage"><canvas id="cv" width="256" height="256"></canvas></div>
+    <div class="row" style="margin-top:12px">
+      <button id="make" disabled>צור GIF</button>
+    </div>
+    <div id="out"></div>
+    <p class="hint">האנימציה והקידוד מתבצעים אצלך במחשב. רק יצירת התמונה פונה לשירות Pollinations החינמי. אם הוא חסום בנטפרי אפשר להעלות תמונה בעצמך.</p>
+  </div>
+</main>
+
+<script type="module">
+import {GIFEncoder, quantize, applyPalette} from './gifenc.esm.js';
+
+const $ = id => document.getElementById(id);
+const cv = $('cv'), ctx = cv.getContext('2d', {willReadFrequently:true});
+const status = t => $('status').textContent = t;
+let sticker = null; // canvas with transparent background
+
+// ---- background removal: flood fill from the edges over colors close to the corners
+function removeBg(img){
+  const S = 512, c = document.createElement('canvas'); c.width = c.height = S;
+  const x = c.getContext('2d', {willReadFrequently:true});
+  x.drawImage(img, 0, 0, S, S);
+  const im = x.getImageData(0, 0, S, S), d = im.data;
+  const px = (X,Y)=>(Y*S+X)*4;
+  const corners = [[0,0],[S-1,0],[0,S-1],[S-1,S-1]].map(([a,b])=>{const i=px(a,b);return [d[i],d[i+1],d[i+2]]});
+  const bg = corners.reduce((s,c)=>s.map((v,i)=>v+c[i]/4),[0,0,0]);
+  const near = i => Math.hypot(d[i]-bg[0], d[i+1]-bg[1], d[i+2]-bg[2]) < 48;
+  const seen = new Uint8Array(S*S), stack = [];
+  for (let i=0;i<S;i++) stack.push(i, (S-1)*S+i, i*S, i*S+S-1);
+  while (stack.length){
+    const p = stack.pop();
+    if (seen[p]) continue;
+    seen[p] = 1;
+    const i = p*4;
+    if (!near(i)) continue;
+    d[i+3] = 0;
+    const X = p % S, Y = (p / S) | 0;
+    if (X>0) stack.push(p-1); if (X<S-1) stack.push(p+1);
+    if (Y>0) stack.push(p-S); if (Y<S-1) stack.push(p+S);
+  }
+  x.putImageData(im, 0, 0);
+  return c;
+}
+
+function show(img){
+  sticker = removeBg(img);
+  drawFrame(0);
+  $('make').disabled = false;
+}
+
+// ---- animation: t in [0,1) loops seamlessly
+const TAU = Math.PI * 2;
+const anims = {
+  bounce: t => ({y:-Math.abs(Math.sin(t*TAU))*0.18, sy:1+0.05*Math.cos(t*TAU*2)}),
+  shake:  t => ({x:Math.sin(t*TAU*4)*0.04, r:Math.sin(t*TAU*4)*0.06}),
+  pulse:  t => ({s:1+0.12*Math.sin(t*TAU)}),
+  spin:   t => ({r:t*TAU}),
+  wobble: t => ({r:Math.sin(t*TAU)*0.25}),
+  float:  t => ({y:Math.sin(t*TAU)*0.06, x:Math.cos(t*TAU)*0.03, r:Math.sin(t*TAU)*0.05}),
+};
+
+function drawFrame(t){
+  const N = +$('size').value;
+  if (cv.width !== N){ cv.width = cv.height = N; }
+  ctx.clearRect(0, 0, N, N);
+  if (!sticker) return;
+  const a = {x:0,y:0,r:0,s:1,sy:1, ...anims[$('anim').value](t)};
+  const cap = $('caption').value.trim();
+  const box = cap ? N*0.78 : N*0.88;
+  ctx.save();
+  ctx.translate(N/2 + a.x*N, (cap ? N*0.45 : N/2) + a.y*N);
+  ctx.rotate(a.r);
+  ctx.scale(a.s, a.s*a.sy);
+  ctx.drawImage(sticker, -box/2, -box/2, box, box);
+  ctx.restore();
+  if (cap){
+    const fs = Math.round(N*0.11);
+    ctx.font = `800 ${fs}px Arial, sans-serif`;
+    ctx.textAlign = 'center'; ctx.direction = 'rtl';
+    ctx.lineJoin = 'round'; ctx.lineWidth = fs*0.22;
+    ctx.strokeStyle = '#000'; ctx.fillStyle = '#fff';
+    ctx.strokeText(cap, N/2, N*0.95, N*0.94);
+    ctx.fillText(cap, N/2, N*0.95, N*0.94);
+  }
+}
+
+let raf;
+(function loop(ts){ drawFrame((ts/1200) % 1); raf = requestAnimationFrame(loop); })(0);
+
+// ---- AI image via Pollinations (free, no key)
+async function generate(){
+  const text = $('prompt').value.trim();
+  if (!text) return;
+  const full = `${text}, ${$('style').value}, single character, centered, solid plain white background, no text`;
+  const seed = Math.floor(Math.random()*1e6);
+  const url = `https://image.pollinations.ai/prompt/${encodeURIComponent(full)}?width=512&height=512&nologo=true&seed=${seed}`;
+  $('gen').disabled = true; status('מצייר... זה יכול לקחת עד חצי דקה');
+  try{
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.status);
+    const bmp = await createImageBitmap(await r.blob());
+    show(bmp); status('מוכן. אפשר ללחוץ שוב לגרסה אחרת, או ליצור GIF.');
+  }catch(e){
+    status('לא הצלחתי לגשת לשירות היצירה (ייתכן שהוא חסום ברשת). אפשר להעלות תמונה בעצמך.');
+  }finally{ $('gen').disabled = false; }
+}
+
+function loadFile(f){
+  const img = new Image();
+  img.onload = () => { show(img); status('התמונה נטענה.'); };
+  img.src = URL.createObjectURL(f);
+}
+
+// ---- GIF export (transparent)
+async function makeGif(){
+  const N = +$('size').value, FRAMES = 24, delay = 50;
+  $('make').disabled = true; status('מקודד GIF...');
+  await new Promise(r => setTimeout(r));
+  const gif = GIFEncoder();
+  for (let i=0;i<FRAMES;i++){
+    drawFrame(i/FRAMES);
+    const {data} = ctx.getImageData(0, 0, N, N);
+    const palette = quantize(data, 256, {format:'rgba4444', oneBitAlpha:true});
+    const index = applyPalette(data, palette, 'rgba4444');
+    const ti = palette.findIndex(c => c[3] === 0);
+    gif.writeFrame(index, N, N, {palette, delay, dispose:2, transparent: ti >= 0, transparentIndex: Math.max(ti,0)});
+    if (i % 4 === 3) await new Promise(r => setTimeout(r));
+  }
+  gif.finish();
+  const url = URL.createObjectURL(new Blob([gif.bytes()], {type:'image/gif'}));
+  $('out').innerHTML = `<img src="${url}" alt="GIF"><a href="${url}" download="sticker.gif"><button>הורד GIF</button></a>`;
+  status(`מוכן (${Math.round(gif.bytes().length/1024)}KB).`);
+  $('make').disabled = false;
+}
+
+$('gen').onclick = generate;
+$('upload').onclick = () => $('file').click();
+$('file').onchange = e => e.target.files[0] && loadFile(e.target.files[0]);
+$('make').onclick = makeGif;
+</script>
+</body>
+</html>
