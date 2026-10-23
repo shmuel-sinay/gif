@@ -25,6 +25,7 @@
   canvas{max-width:100%;height:auto}
   #status{min-height:1.4em;color:var(--mut);font-size:.9rem;margin-top:8px}
   #out img{max-width:256px;display:block;margin:8px 0}
+  body.drag .stage{outline:3px dashed var(--acc);outline-offset:-6px}
   .hint{font-size:.8rem;color:var(--mut)}
 </style>
 </head>
@@ -57,9 +58,11 @@
     <input type="text" id="caption" placeholder="לדוגמה: מזל טוב!">
     <div class="row" style="margin-top:12px">
       <button id="gen">צור עם AI</button>
-      <button id="upload" class="sec">או העלה תמונה</button>
+      <button id="upload" class="sec">בחר קובץ תמונה</button>
     </div>
-    <input type="file" id="file" accept="image/*" hidden>
+    <input type="file" id="file" accept="image/*,.webp,.png,.jpg,.jpeg,.gif" hidden>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="rmbg" checked> הסר רקע אחיד (כבה אם התמונה כבר שקופה או מלאה)</label>
+    <p class="hint">אפשר גם לגרור תמונה לכל מקום בדף, או להדביק עם Ctrl+V.</p>
     <div id="status"></div>
   </div>
 
@@ -109,10 +112,17 @@ function removeBg(img){
   return c;
 }
 
-function show(img){
-  sticker = removeBg(img);
+function show(img, remove = true){
+  sticker = remove ? removeBg(img) : fit(img);
   drawFrame(0);
   $('make').disabled = false;
+}
+
+function fit(img){
+  const S = 512, c = document.createElement('canvas'); c.width = c.height = S;
+  const w = img.width || img.naturalWidth, h = img.height || img.naturalHeight, k = Math.min(S/w, S/h);
+  c.getContext('2d').drawImage(img, (S-w*k)/2, (S-h*k)/2, w*k, h*k);
+  return c;
 }
 
 // ---- animation: t in [0,1) loops seamlessly
@@ -174,7 +184,8 @@ async function generate(){
 
 function loadFile(f){
   const img = new Image();
-  img.onload = () => { show(img); status('התמונה נטענה.'); };
+  img.onload = () => { show(img, $('rmbg').checked); status('התמונה נטענה.'); };
+  img.onerror = () => status('לא הצלחתי לקרוא את הקובץ. נסה PNG או JPG.');
   img.src = URL.createObjectURL(f);
 }
 
@@ -204,6 +215,12 @@ $('gen').onclick = generate;
 $('upload').onclick = () => $('file').click();
 $('file').onchange = e => e.target.files[0] && loadFile(e.target.files[0]);
 $('make').onclick = makeGif;
+
+const imgFrom = files => [...files].find(f => f.type.startsWith('image/') || /\.(webp|png|jpe?g|gif)$/i.test(f.name));
+['dragenter','dragover'].forEach(t => addEventListener(t, e => { e.preventDefault(); document.body.classList.add('drag'); }));
+['dragleave','drop'].forEach(t => addEventListener(t, e => { e.preventDefault(); if (t==='drop' || !e.relatedTarget) document.body.classList.remove('drag'); }));
+addEventListener('drop', e => { const f = imgFrom(e.dataTransfer.files); f ? loadFile(f) : status('זה לא קובץ תמונה.'); });
+addEventListener('paste', e => { const f = imgFrom(e.clipboardData.files); if (f) loadFile(f); });
 </script>
 </body>
 </html>
