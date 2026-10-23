@@ -73,8 +73,9 @@
   </div>
 </main>
 
-<script type="module">
-import {GIFEncoder, quantize, applyPalette} from './gifenc.esm.js';
+<script src="gifenc.js"></script>
+<script>
+const {GIFEncoder, quantize, applyPalette} = GIFenc;
 
 const $ = id => document.getElementById(id);
 const cv = $('cv'), ctx = cv.getContext('2d', {willReadFrequently:true});
