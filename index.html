@@ -63,7 +63,7 @@
       <label for="file" class="btn sec" style="margin:0;text-align:center;cursor:pointer">בחר קובץ תמונה</label>
     </div>
     <input type="file" id="file" accept="image/*" style="position:absolute;opacity:0;width:1px;height:1px">
-    <label style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="rmbg" checked> הסר רקע אחיד (כבה אם התמונה כבר שקופה או מלאה)</label>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="rmbg"> הסר רקע אחיד (רק לתמונות עם רקע בצבע אחד)</label>
     <p class="hint">אפשר גם לגרור תמונה לכל מקום בדף, או להדביק עם Ctrl+V.</p>
     <div id="status"></div>
   </div>
@@ -923,8 +923,10 @@ function removeBg(img){
   const im = x.getImageData(0, 0, S, S), d = im.data;
   const px = (X,Y)=>(Y*S+X)*4;
   const corners = [[0,0],[S-1,0],[0,S-1],[S-1,S-1]].map(([a,b])=>{const i=px(a,b);return [d[i],d[i+1],d[i+2]]});
+  const spread = Math.max(...corners.map(a => Math.max(...corners.map(b => Math.hypot(a[0]-b[0], a[1]-b[1], a[2]-b[2])))));
+  if (spread > 30){ status('הרקע לא אחיד, אז לא הסרתי אותו. התמונה נשארה כמו שהיא.'); return fit(img); }
   const bg = corners.reduce((s,c)=>s.map((v,i)=>v+c[i]/4),[0,0,0]);
-  const near = i => Math.hypot(d[i]-bg[0], d[i+1]-bg[1], d[i+2]-bg[2]) < 48;
+  const near = i => Math.hypot(d[i]-bg[0], d[i+1]-bg[1], d[i+2]-bg[2]) < 28;
   const seen = new Uint8Array(S*S), stack = [];
   for (let i=0;i<S;i++) stack.push(i, (S-1)*S+i, i*S, i*S+S-1);
   while (stack.length){
@@ -1009,7 +1011,7 @@ async function generate(){
     const r = await fetch(url);
     if (!r.ok) throw new Error(r.status);
     const bmp = await createImageBitmap(await r.blob());
-    show(bmp); status('מוכן. אפשר ללחוץ שוב לגרסה אחרת, או ליצור GIF.');
+    $('rmbg').checked = true; show(bmp); status('מוכן. אפשר ללחוץ שוב לגרסה אחרת, או ליצור GIF.');
   }catch(e){
     status('לא הצלחתי לגשת לשירות היצירה (ייתכן שהוא חסום ברשת). אפשר להעלות תמונה בעצמך.');
   }finally{ $('gen').disabled = false; }
