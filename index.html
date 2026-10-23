@@ -18,6 +18,8 @@
   input[type=text],select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:transparent}
   .row{display:flex;gap:10px;flex-wrap:wrap}.row>*{flex:1;min-width:140px}
   button{cursor:pointer;border:0;border-radius:10px;padding:10px 16px;background:var(--acc);color:#fff;font-weight:600}
+  .btn{padding:10px 16px;border-radius:10px;font-weight:600}
+  .btn.sec{background:transparent;color:var(--fg);border:1px solid var(--line)}
   button.sec{background:transparent;color:var(--fg);border:1px solid var(--line)}
   button:disabled{opacity:.5;cursor:wait}
   .stage{display:grid;place-items:center;min-height:300px;border-radius:12px;
@@ -58,9 +60,9 @@
     <input type="text" id="caption" placeholder="לדוגמה: מזל טוב!">
     <div class="row" style="margin-top:12px">
       <button id="gen">צור עם AI</button>
-      <button id="upload" class="sec">בחר קובץ תמונה</button>
+      <label for="file" class="btn sec" style="margin:0;text-align:center;cursor:pointer">בחר קובץ תמונה</label>
     </div>
-    <input type="file" id="file" accept="image/*,.webp,.png,.jpg,.jpeg,.gif" hidden>
+    <input type="file" id="file" accept="image/*" style="position:absolute;opacity:0;width:1px;height:1px">
     <label style="display:flex;gap:8px;align-items:center;margin-top:12px"><input type="checkbox" id="rmbg" checked> הסר רקע אחיד (כבה אם התמונה כבר שקופה או מלאה)</label>
     <p class="hint">אפשר גם לגרור תמונה לכל מקום בדף, או להדביק עם Ctrl+V.</p>
     <div id="status"></div>
@@ -936,6 +938,9 @@ function removeBg(img){
     if (X>0) stack.push(p-1); if (X<S-1) stack.push(p+1);
     if (Y>0) stack.push(p-S); if (Y<S-1) stack.push(p+S);
   }
+  let left = 0;
+  for (let i = 3; i < d.length; i += 4) if (d[i]) left++;
+  if (left < S*S*0.08){ status('הסרת הרקע מחקה כמעט את כל התמונה, אז השארתי אותה כמו שהיא.'); return fit(img); }
   x.putImageData(im, 0, 0);
   return c;
 }
@@ -1012,7 +1017,7 @@ async function generate(){
 
 function loadFile(f){
   const img = new Image();
-  img.onload = () => { show(img, $('rmbg').checked); status('התמונה נטענה.'); };
+  img.onload = () => { status('התמונה נטענה.'); show(img, $('rmbg').checked); };
   img.onerror = () => status('לא הצלחתי לקרוא את הקובץ. נסה PNG או JPG.');
   img.src = URL.createObjectURL(f);
 }
@@ -1040,8 +1045,7 @@ async function makeGif(){
 }
 
 $('gen').onclick = generate;
-$('upload').onclick = () => $('file').click();
-$('file').onchange = e => e.target.files[0] && loadFile(e.target.files[0]);
+$('file').onchange = e => { if (e.target.files[0]) loadFile(e.target.files[0]); e.target.value = ''; };
 $('make').onclick = makeGif;
 
 const imgFrom = files => [...files].find(f => f.type.startsWith('image/') || /\.(webp|png|jpe?g|gif)$/i.test(f.name));
